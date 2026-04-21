@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import aws_cdk as cdk
 import pytest
-from aws_cdk.assertions import Template
+from aws_cdk.assertions import Match, Template
 
 from nutriwise_cdk.api_stack import ApiStack
 from nutriwise_cdk.auth_stack import AuthStack
@@ -72,3 +72,117 @@ def test_prod_uses_retain_removal_policy():
     tpl = Template.from_stack(stack)
     # In prod we retain tables on stack deletion.
     tpl.has_resource("AWS::DynamoDB::Table", {"DeletionPolicy": "Retain"})
+
+
+# --- Cost-optimization guardrails ------------------------------------------------
+# These tests protect against regressions: if someone drops the ARM architecture,
+# loses the KEYS_ONLY projection, or forgets the price-class override for dev,
+# the bill climbs silently. Tests make the intent explicit.
+
+
+def test_api_lambda_uses_arm64_for_cost(app: cdk.App):
+    auth = AuthStack(app, "A", env_name="dev")
+    data = DataStack(app, "D", env_name="dev")
+    media = MediaStack(app, "M", env_name="dev")
+    api = ApiStack(
+        app, "Api-arm", env_name="dev",
+        user_pool=auth.user_pool, tables=data.tables, photo_bucket=media.photo_bucket,
+    )
+    tpl = Template.from_stack(api)
+    tpl.has_resource_properties(
+        "AWS::Lambda::Function",
+        Match.object_like({"Architectures": ["arm64"]}),
+    )
+
+
+def test_api_lambda_right_sized_memory(app: cdk.App):
+    auth = AuthStack(app, "A2", env_name="dev")
+    data = DataStack(app, "D2", env_name="dev")
+    media = MediaStack(app, "M2", env_name="dev")
+    api = ApiStack(
+        app, "Api-mem", env_name="dev",
+        user_pool=auth.user_pool, tables=data.tables, photo_bucket=media.photo_bucket,
+    )
+    tpl = Template.from_stack(api)
+    tpl.has_resource_properties(
+        "AWS::Lambda::Function",
+        Match.object_like({"MemorySize": 512}),
+    )
+
+
+def test_dev_cloudfront_is_regional_price_class(app: cdk.App):
+    stack = MediaStack(app, "Media-dev-pc", env_name="dev")
+    tpl = Template.from_stack(stack)
+    tpl.has_resource_properties(
+        "AWS::CloudFront::Distribution",
+        Match.object_like({
+            "DistributionConfig": Match.object_like({"PriceClass": "PriceClass_100"}),
+        }),
+    )
+
+
+def test_prod_cloudfront_is_global_for_latency():
+    app = cdk.App()
+    stack = MediaStack(app, "Media-prod-pc", env_name="prod")
+    tpl = Template.from_stack(stack)
+    tpl.has_resource_properties(
+        "AWS::CloudFront::Distribution",
+        Match.object_like({
+            "DistributionConfig": Match.object_like({"PriceClass": "PriceClass_All"}),
+        }),
+    )
+
+
+def test_gsis_use_cheap_projections(app: cdk.App):
+    stack = DataStack(app, "Data-gsi", env_name="dev")
+    tpl = Template.from_stack(stack)
+    # At least one GSI must be KEYS_ONLY (the cheapest projection type).
+    tpl.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        Match.object_like({
+            "GlobalSecondaryIndexes": Match.array_with([
+                Match.object_like({
+                    "Projection": Match.object_like({"ProjectionType": "KEYS_ONLY"}),
+                }),
+            ]),
+        }),
+    )
+
+
+def test_food_logs_has_ttl_for_storage_cap(app: cdk.App):
+    stack = DataStack(app, "Data-ttl", env_name="dev")
+    tpl = Template.from_stack(stack)
+    tpl.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        Match.object_like({
+            "TableName": "nutriwise-food-logs-dev",
+            "TimeToLiveSpecification": Match.object_like({"AttributeName": "ttl", "Enabled": True}),
+        }),
+    )
+
+
+def test_dev_skips_pitr_to_save_cost(app: cdk.App):
+    stack = DataStack(app, "Data-no-pitr", env_name="dev")
+    tpl = Template.from_stack(stack)
+    tables = tpl.find_resources("AWS::DynamoDB::Table")
+    # None of the dev tables should enable PITR.
+    for _, props in tables.items():
+        pitr = props.get("Properties", {}).get("PointInTimeRecoverySpecification")
+        if pitr:
+            assert pitr.get("PointInTimeRecoveryEnabled") is False
+
+
+def test_no_vpc_anywhere(app: cdk.App):
+    # A stray VPC drags in a NAT gateway ($32/mo/AZ) the moment someone wires
+    # a subnet. Guard against it until we have a reason (e.g. Aurora).
+    auth = AuthStack(app, "A3", env_name="dev")
+    data = DataStack(app, "D3", env_name="dev")
+    media = MediaStack(app, "M3", env_name="dev")
+    api = ApiStack(
+        app, "Api-novpc", env_name="dev",
+        user_pool=auth.user_pool, tables=data.tables, photo_bucket=media.photo_bucket,
+    )
+    for stack in (auth, data, media, api):
+        tpl = Template.from_stack(stack)
+        tpl.resource_count_is("AWS::EC2::VPC", 0)
+        tpl.resource_count_is("AWS::EC2::NatGateway", 0)
