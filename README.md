@@ -1,10 +1,12 @@
 # NutriWise
 
+[![CI](https://github.com/Ramu007/NutriWise/actions/workflows/ci.yml/badge.svg)](https://github.com/Ramu007/NutriWise/actions/workflows/ci.yml)
+
 A marketplace platform connecting customers with certified nutritionists for online consultations and in-home kitchen audits. AI-powered food photo analysis, daily tracking, and personalized meal recommendations — built for US and India metropolitan cities.
 
 ## Status
 
-**Phase 0 — foundation in progress.** This repo contains the monorepo skeleton, a working FastAPI backend with Bedrock-powered food photo analysis, an Expo React Native app, and AWS CDK infra. See [docs/roadmap.md](docs/roadmap.md) for the phased plan.
+**Phase 0 — foundation complete.** Monorepo skeleton, FastAPI backend (56 passing tests) with Bedrock-powered food photo analysis, Expo React Native app (4 screens), AWS CDK infra (4 stacks, 5 synth tests), and CI across all three surfaces. See [docs/roadmap.md](docs/roadmap.md) for the phased plan.
 
 ## Repo layout
 
@@ -31,7 +33,7 @@ cd mobile && npm install && npx expo start
 
 # infra (requires Node 20+ for CDK, Python 3.13)
 cd infra && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && npx cdk synth
+pip install -e ".[dev]" && pytest  # synth tests run without AWS creds
 ```
 
 ## Tech stack
