@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     food_logs_table: str = Field(default="nutriwise-food-logs")
     bookings_table: str = Field(default="nutriwise-bookings")
 
+    # "memory" (default in dev) or "dynamo". In staging/prod we default to dynamo.
+    repo_backend: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -8,19 +8,14 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.core.security import Principal, get_current_principal
+from app.deps import get_repos
 from app.models.food import DailySummary, FoodLogEntry, FoodPhotoAnalysis
 from app.models.health import HealthProfileIn, enrich_profile
+from app.repositories.base import RepoBundle
 from app.services.bedrock import analyze_food_photo
 from app.services.daily_summary import summarize
 
 router = APIRouter(prefix="/v1/food", tags=["food"])
-
-_logs: dict[str, list[FoodLogEntry]] = {}  # user_id -> entries (phase-0 in-mem)
-
-
-def _store() -> dict[str, list[FoodLogEntry]]:
-    return _logs
-
 
 _SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
@@ -39,7 +34,6 @@ async def analyze(
     data = await photo.read()
     if not data:
         raise HTTPException(status_code=400, detail="empty photo")
-    # Media type literal — narrowed by the _SUPPORTED_IMAGE_TYPES check above.
     media_type: Literal["image/jpeg", "image/png", "image/gif", "image/webp"] = (
         photo.content_type  # type: ignore[assignment]
     )
@@ -50,9 +44,8 @@ async def analyze(
 def add_log(
     entry: FoodLogEntry,
     principal: Principal = Depends(get_current_principal),
-    store: dict[str, list[FoodLogEntry]] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> FoodLogEntry:
-    # Force user_id + entry_id to server-controlled values.
     stamped = entry.model_copy(
         update={
             "user_id": principal.user_id,
@@ -60,8 +53,7 @@ def add_log(
             "logged_at": entry.logged_at or datetime.now(UTC),
         }
     )
-    store.setdefault(principal.user_id, []).append(stamped)
-    return stamped
+    return repos.food_logs.add(stamped)
 
 
 @router.post("/summary", response_model=DailySummary)
@@ -69,9 +61,8 @@ def daily_summary(
     day: date,
     profile: HealthProfileIn,
     principal: Principal = Depends(get_current_principal),
-    store: dict[str, list[FoodLogEntry]] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> DailySummary:
-    # Phase 0: caller supplies the profile so we can compute their target without a DB read.
     enriched = enrich_profile(principal.user_id, profile)
-    entries = [e for e in store.get(principal.user_id, []) if e.logged_at.date() == day]
+    entries = repos.food_logs.list_for_day(principal.user_id, day)
     return summarize(principal.user_id, day, entries, enriched.daily_target_kcal)

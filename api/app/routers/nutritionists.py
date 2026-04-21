@@ -8,29 +8,24 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.security import Principal, get_current_principal
+from app.deps import get_repos
 from app.models.nutritionist import (
     NutritionistIn,
     NutritionistOut,
     NutritionistSpecialty,
     VerificationStatus,
 )
+from app.repositories.base import RepoBundle
 from app.services.matching import SearchFilters, filter_nutritionists
 
 router = APIRouter(prefix="/v1/nutritionists", tags=["nutritionists"])
-
-# Phase 0: in-memory registry. Swapped for DynamoDB in phase 1.
-_registry: dict[str, NutritionistOut] = {}
-
-
-def _store() -> dict[str, NutritionistOut]:
-    return _registry
 
 
 @router.post("", response_model=NutritionistOut, status_code=201)
 def register(
     body: NutritionistIn,
     principal: Principal = Depends(get_current_principal),
-    store: dict[str, NutritionistOut] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> NutritionistOut:
     out = NutritionistOut(
         **body.model_dump(),
@@ -38,8 +33,7 @@ def register(
         verification_status=VerificationStatus.pending,
         created_at=datetime.now(UTC),
     )
-    store[out.nutritionist_id] = out
-    return out
+    return repos.nutritionists.put(out)
 
 
 @router.get("", response_model=list[NutritionistOut])
@@ -51,7 +45,7 @@ def search(
     min_rating: Annotated[float | None, Query(ge=0, le=5)] = None,
     max_virtual_rate: Annotated[float | None, Query(gt=0)] = None,
     only_approved: bool = True,
-    store: dict[str, NutritionistOut] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> list[NutritionistOut]:
     f = SearchFilters(
         country=country,
@@ -62,15 +56,15 @@ def search(
         max_virtual_rate=max_virtual_rate,
         only_approved=only_approved,
     )
-    return filter_nutritionists(store.values(), f)
+    return filter_nutritionists(repos.nutritionists.list_all(), f)
 
 
 @router.get("/{nutritionist_id}", response_model=NutritionistOut)
 def get_one(
     nutritionist_id: str,
-    store: dict[str, NutritionistOut] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> NutritionistOut:
-    n = store.get(nutritionist_id)
+    n = repos.nutritionists.get(nutritionist_id)
     if n is None:
         raise HTTPException(status_code=404, detail="nutritionist not found")
     return n
@@ -81,14 +75,12 @@ def verify(
     nutritionist_id: str,
     status: VerificationStatus,
     principal: Principal = Depends(get_current_principal),
-    store: dict[str, NutritionistOut] = Depends(_store),
+    repos: RepoBundle = Depends(get_repos),
 ) -> NutritionistOut:
-    # Admin-only in phase 1 once Cognito groups are wired. For phase 0 we trust dev headers.
     if principal.role not in ("admin", "dev"):
         raise HTTPException(status_code=403, detail="admin only")
-    n = store.get(nutritionist_id)
+    n = repos.nutritionists.get(nutritionist_id)
     if n is None:
         raise HTTPException(status_code=404, detail="nutritionist not found")
     updated = n.model_copy(update={"verification_status": status})
-    store[nutritionist_id] = updated
-    return updated
+    return repos.nutritionists.put(updated)
