@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "NutriWise",
+    "slug": "nutriwise",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "nutriwise",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nutriwise.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "NutriWise uses the camera to photograph meals for calorie estimation.",
+        "NSPhotoLibraryUsageDescription": "NutriWise accesses your photo library to analyze meal photos you've already taken."
+      }
+    },
+    "android": {
+      "package": "com.nutriwise.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
