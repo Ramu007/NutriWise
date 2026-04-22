@@ -4,6 +4,7 @@ import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button } from '../src/components/Button';
 import { Screen } from '../src/components/Screen';
 import { api, type HealthProfileOut } from '../src/services/api';
+import { currentUserId } from '../src/services/auth';
 import { colors } from '../src/theme/colors';
 
 type Form = {
@@ -30,7 +31,7 @@ export default function Profile() {
   async function submit() {
     setLoading(true);
     try {
-      const out = await api.upsertHealthProfile('demo-user', {
+      const out = await api.upsertHealthProfile(currentUserId(), {
         sex: form.sex,
         age_years: Number(form.age),
         height_cm: Number(form.heightCm),

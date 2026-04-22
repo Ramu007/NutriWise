@@ -4,18 +4,13 @@ import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '../src/components/Button';
 import { Screen } from '../src/components/Screen';
-import { api } from '../src/services/api';
+import { api, type FoodPhotoAnalysis } from '../src/services/api';
+import { currentUserId } from '../src/services/auth';
 import { colors } from '../src/theme/colors';
-
-type Analysis = {
-  items: { name: string; kcal: number; serving: string }[];
-  total_kcal: number;
-  notes?: string;
-};
 
 export default function Log() {
   const [uri, setUri] = useState<string | null>(null);
-  const [result, setResult] = useState<Analysis | null>(null);
+  const [result, setResult] = useState<FoodPhotoAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function pick() {
@@ -51,7 +46,7 @@ export default function Log() {
     if (!uri) return;
     setLoading(true);
     try {
-      const analysis = (await api.analyzeFoodPhoto('demo-user', uri)) as Analysis;
+      const analysis = await api.analyzeFoodPhotoByKey(currentUserId(), uri);
       setResult(analysis);
     } catch (e) {
       Alert.alert('Analysis failed', (e as Error).message);
