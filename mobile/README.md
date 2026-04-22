@@ -42,6 +42,26 @@ off the Lambda request path.
 - `app/log.tsx` — meal photo capture + AI analysis
 - `app/find.tsx` — nutritionist directory with US/India tabs
 
+## Design system
+
+The UI is built on a small set of shared primitives so screens stay consistent
+and tweaks are cheap:
+
+- `src/theme/colors.ts` — palette (warm off-white bg, forest-green accent,
+  coral highlight, soft surfaces).
+- `src/theme/tokens.ts` — spacing, radii, typography scale, platform-aware
+  shadows (`shadows.sm/md/lg`).
+- `src/components/Button.tsx` — primary / secondary / ghost variants,
+  `md` + `lg` sizes, spring-scale press animation.
+- `src/components/Card.tsx` — default / sunken / accent tones with subtle
+  elevation.
+- `src/components/Badge.tsx` — pill tags for verification, categories, macros.
+- `src/components/Screen.tsx` — safe-area + scroll wrapper, caps content at
+  640px on wide viewports (web).
+
+If you add a new screen, start from `Screen` + `Card` + the typography presets
+in `tokens.ts` before reaching for raw `StyleSheet` values.
+
 ## Type checking
 
 ```bash
