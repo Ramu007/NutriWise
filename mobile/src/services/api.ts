@@ -133,7 +133,11 @@ export const api = {
   },
 
   /**
-   * Presign → PUT to S3 → analyze. This is the path mobile should use in prod.
+   * Presign → PUT to S3 → analyze. This is the path mobile uses in prod.
+   *
+   * In local dev there is usually no S3 bucket, so the presign step or the
+   * PUT itself fails. We fall back to the legacy multipart `/analyze` path
+   * automatically so the UI stays functional without a separate toggle.
    */
   async analyzeFoodPhotoByKey(
     userId: string,
@@ -142,11 +146,18 @@ export const api = {
   ): Promise<FoodPhotoAnalysis> {
     const contentType = contentTypeForUri(uri);
 
-    const presign = await request<PresignOut>('/v1/food/uploads/presign', {
-      method: 'POST',
-      body: JSON.stringify({ content_type: contentType }),
-      userId,
-    });
+    let presign: PresignOut;
+    try {
+      presign = await request<PresignOut>('/v1/food/uploads/presign', {
+        method: 'POST',
+        body: JSON.stringify({ content_type: contentType }),
+        userId,
+      });
+    } catch (e) {
+      // Presign endpoint unavailable (no S3 creds on local dev) — fall back.
+      console.warn('[nutriwise] presign failed, using multipart fallback:', (e as Error).message);
+      return api.analyzeFoodPhoto(userId, uri, hint);
+    }
 
     // React Native's fetch can stream a local file URI straight into a PUT body,
     // but the cleanest cross-platform path is to read the blob and send that.
@@ -158,8 +169,10 @@ export const api = {
       body: blob,
     });
     if (!putRes.ok) {
-      const body = await putRes.text().catch(() => '');
-      throw new Error(`S3 upload ${putRes.status}: ${body || putRes.statusText}`);
+      console.warn(
+        `[nutriwise] S3 PUT failed (${putRes.status}); using multipart fallback`,
+      );
+      return api.analyzeFoodPhoto(userId, uri, hint);
     }
 
     return request<FoodPhotoAnalysis>('/v1/food/analyze-key', {
@@ -170,15 +183,44 @@ export const api = {
   },
 
   /**
-   * Legacy multipart upload — handy for local dev where S3 isn't reachable
-   * (e.g. behind a captive portal). Prefer `analyzeFoodPhotoByKey` in prod.
+   * Legacy multipart upload — used directly in local dev (no S3 reachable)
+   * and as the automatic fallback from `analyzeFoodPhotoByKey` when presign
+   * or the S3 PUT fails. Prefer the key-based flow in prod.
    */
-  async analyzeFoodPhoto(userId: string, uri: string): Promise<FoodPhotoAnalysis> {
+  async analyzeFoodPhoto(
+    userId: string,
+    uri: string,
+    hint?: string,
+  ): Promise<FoodPhotoAnalysis> {
+    const contentType = contentTypeForUri(uri);
+
+    // On web, `uri` is a blob URL — fetch it into a real Blob and send that.
+    // On native, FormData happily accepts `{uri, name, type}`.
     const form = new FormData();
-    form.append('photo', { uri, name: 'meal.jpg', type: 'image/jpeg' } as unknown as Blob);
+    const filename = `meal.${contentType.split('/')[1]}`;
+    if (uri.startsWith('blob:') || uri.startsWith('data:') || uri.startsWith('http')) {
+      const fileRes = await fetch(uri);
+      const blob = await fileRes.blob();
+      // Browser FormData supports (name, value, filename); RN types don't
+      // declare the third arg but the native polyfill ignores it anyway.
+      (form as unknown as { append: (n: string, v: Blob, f?: string) => void }).append(
+        'photo',
+        blob,
+        filename,
+      );
+    } else {
+      form.append('photo', {
+        uri,
+        name: filename,
+        type: contentType,
+      } as unknown as Blob);
+    }
+    if (hint) form.append('hint', hint);
 
     const headers: Record<string, string> = { 'X-User-Id': userId };
     if (_authToken) headers['Authorization'] = `Bearer ${_authToken}`;
+    // Note: DO NOT set Content-Type — the browser/native stack sets the
+    // multipart boundary automatically. Setting it manually breaks parsing.
 
     const res = await fetch(`${baseUrl}/v1/food/analyze`, {
       method: 'POST',
@@ -186,7 +228,8 @@ export const api = {
       headers,
     });
     if (!res.ok) {
-      throw new Error(`analyze failed: ${res.status}`);
+      const body = await res.text().catch(() => '');
+      throw new Error(`analyze failed ${res.status}: ${body || res.statusText}`);
     }
     return (await res.json()) as FoodPhotoAnalysis;
   },

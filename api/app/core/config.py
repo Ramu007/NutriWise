@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # "memory" (default in dev) or "dynamo". In staging/prod we default to dynamo.
     repo_backend: str | None = None
 
+    # Dev-only: return a canned food-photo analysis instead of calling Bedrock.
+    # Handy for local web testing where we don't want to wire AWS credentials.
+    analysis_stub: bool = Field(default=False)
+
 
 @lru_cache
 def get_settings() -> Settings:
