@@ -88,14 +88,50 @@ export type PresignOut = {
   required_headers: Record<string, string>;
 };
 
+export type FoodItem = {
+  name: string;
+  serving: string;
+  kcal: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  fiber_g?: number;
+  confidence?: number;
+};
+
 export type FoodPhotoAnalysis = {
-  items: { name: string; serving: string; kcal: number }[];
+  items: FoodItem[];
   total_kcal: number;
   total_protein_g: number;
   total_carbs_g: number;
   total_fat_g: number;
   notes?: string;
   model_used: string;
+};
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+export type FoodLogEntry = {
+  entry_id: string;
+  user_id: string;
+  logged_at: string;
+  meal: MealSlot;
+  items: FoodItem[];
+  source?: 'photo' | 'manual' | 'recommendation';
+  photo_s3_key?: string | null;
+};
+
+export type DailySummary = {
+  user_id: string;
+  day: string;
+  total_kcal: number;
+  total_protein_g: number;
+  total_carbs_g: number;
+  total_fat_g: number;
+  target_kcal: number;
+  remaining_kcal: number;
+  status: 'under' | 'on_track' | 'over';
+  entry_count: number;
 };
 
 function contentTypeForUri(uri: string): ImageContentType {
@@ -241,5 +277,43 @@ export const api = {
       throw new Error(`analyze failed ${res.status}: ${body || res.statusText}`);
     }
     return (await res.json()) as FoodPhotoAnalysis;
+  },
+
+  addFoodLog(
+    userId: string,
+    entry: {
+      meal: MealSlot;
+      items: FoodItem[];
+      source?: 'photo' | 'manual' | 'recommendation';
+      logged_at?: string;
+    },
+  ): Promise<FoodLogEntry> {
+    const body: Partial<FoodLogEntry> = {
+      entry_id: '',
+      user_id: userId,
+      logged_at: entry.logged_at ?? new Date().toISOString(),
+      meal: entry.meal,
+      items: entry.items,
+      source: entry.source ?? 'photo',
+    };
+    return request<FoodLogEntry>('/v1/food/logs', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      userId,
+    });
+  },
+
+  listFoodLogs(userId: string, day?: string): Promise<FoodLogEntry[]> {
+    const suffix = day ? `?day=${encodeURIComponent(day)}` : '';
+    return request<FoodLogEntry[]>(`/v1/food/logs${suffix}`, { userId });
+  },
+
+  getDailySummary(userId: string, day?: string): Promise<DailySummary> {
+    const suffix = day ? `?day=${encodeURIComponent(day)}` : '';
+    return request<DailySummary>(`/v1/food/summary${suffix}`, { userId });
+  },
+
+  getHealthProfile(userId: string): Promise<HealthProfileOut> {
+    return request<HealthProfileOut>('/v1/health/profile', { userId });
   },
 };

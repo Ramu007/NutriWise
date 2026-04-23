@@ -20,6 +20,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ title: 'NutriWise' }} />
         <Stack.Screen name="profile" options={{ title: 'Your profile' }} />
         <Stack.Screen name="log" options={{ title: 'Log a meal' }} />
+        <Stack.Screen name="today" options={{ title: 'Today' }} />
         <Stack.Screen name="find" options={{ title: 'Nutritionists' }} />
       </Stack>
     </SafeAreaProvider>

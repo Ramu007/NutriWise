@@ -279,9 +279,9 @@ def test_food_log_sets_ttl_and_queries_by_day(dynamo_client, customer_headers):
     # ~2 years out.
     assert int(items[0]["ttl"]) > int((now + timedelta(days=700)).timestamp())
 
-    r2 = dynamo_client.post(
-        "/v1/food/summary",
-        params={"day": now.date().isoformat()},
+    # Summary now reads the caller's persisted profile — upsert one first.
+    dynamo_client.post(
+        "/v1/health/profile",
         json={
             "sex": "female",
             "age_years": 30,
@@ -290,6 +290,11 @@ def test_food_log_sets_ttl_and_queries_by_day(dynamo_client, customer_headers):
             "activity_level": "moderate",
             "goal": "maintain",
         },
+        headers=customer_headers,
+    )
+    r2 = dynamo_client.get(
+        "/v1/food/summary",
+        params={"day": now.date().isoformat()},
         headers=customer_headers,
     )
     assert r2.status_code == 200

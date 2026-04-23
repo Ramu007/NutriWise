@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from app.core.config import Settings, get_settings
 from app.core.security import Principal, get_current_principal
 from app.deps import get_repos
 from app.models.food import DailySummary, FoodLogEntry, FoodPhotoAnalysis
-from app.models.health import HealthProfileIn, enrich_profile
 from app.repositories.base import RepoBundle
 from app.services.bedrock import analyze_food_photo
 from app.services.daily_summary import summarize
@@ -127,13 +126,33 @@ def add_log(
     return repos.food_logs.add(stamped)
 
 
-@router.post("/summary", response_model=DailySummary)
+@router.get("/summary", response_model=DailySummary)
 def daily_summary(
-    day: date,
-    profile: HealthProfileIn,
+    day: Annotated[date | None, Query()] = None,
     principal: Principal = Depends(get_current_principal),
     repos: RepoBundle = Depends(get_repos),
 ) -> DailySummary:
-    enriched = enrich_profile(principal.user_id, profile)
+    """Today's kcal + macros vs the caller's stored daily target.
+
+    Requires a health profile (POST /v1/health/profile) so we know the
+    target kcal to roll up against.
+    """
+    profile = repos.users.get_profile(principal.user_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=409,
+            detail="health profile required — POST /v1/health/profile first",
+        )
+    day = day or datetime.now(UTC).date()
     entries = repos.food_logs.list_for_day(principal.user_id, day)
-    return summarize(principal.user_id, day, entries, enriched.daily_target_kcal)
+    return summarize(principal.user_id, day, entries, profile.daily_target_kcal)
+
+
+@router.get("/logs", response_model=list[FoodLogEntry])
+def list_logs(
+    day: Annotated[date | None, Query()] = None,
+    principal: Principal = Depends(get_current_principal),
+    repos: RepoBundle = Depends(get_repos),
+) -> list[FoodLogEntry]:
+    day = day or datetime.now(UTC).date()
+    return repos.food_logs.list_for_day(principal.user_id, day)

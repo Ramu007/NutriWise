@@ -1,20 +1,34 @@
+import { Link } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
-import { Alert, Image, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Badge } from '../src/components/Badge';
 import { Button } from '../src/components/Button';
 import { Card } from '../src/components/Card';
 import { Screen } from '../src/components/Screen';
-import { api, type FoodPhotoAnalysis } from '../src/services/api';
+import { api, type FoodPhotoAnalysis, type MealSlot } from '../src/services/api';
 import { currentUserId } from '../src/services/auth';
 import { colors } from '../src/theme/colors';
 import { radii, shadows, spacing, typography } from '../src/theme/tokens';
+
+const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+function guessMealSlot(now = new Date()): MealSlot {
+  const hour = now.getHours();
+  if (hour < 10) return 'breakfast';
+  if (hour < 15) return 'lunch';
+  if (hour < 21) return 'dinner';
+  return 'snack';
+}
 
 export default function Log() {
   const [uri, setUri] = useState<string | null>(null);
   const [result, setResult] = useState<FoodPhotoAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [meal, setMeal] = useState<MealSlot>(() => guessMealSlot());
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   async function pick() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -29,6 +43,7 @@ export default function Log() {
     if (!res.canceled && res.assets.length > 0) {
       setUri(res.assets[0].uri);
       setResult(null);
+      setSaved(false);
     }
   }
 
@@ -42,19 +57,47 @@ export default function Log() {
     if (!res.canceled && res.assets.length > 0) {
       setUri(res.assets[0].uri);
       setResult(null);
+      setSaved(false);
     }
   }
 
   async function analyze() {
     if (!uri) return;
     setLoading(true);
+    setSaved(false);
     try {
       const analysis = await api.analyzeFoodPhotoByKey(currentUserId(), uri);
       setResult(analysis);
+      setMeal(guessMealSlot());
     } catch (e) {
       Alert.alert('Analysis failed', (e as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function save() {
+    if (!result) return;
+    setSaving(true);
+    try {
+      await api.addFoodLog(currentUserId(), {
+        meal,
+        items: result.items,
+        source: 'photo',
+      });
+      setSaved(true);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg.includes('409')) {
+        Alert.alert(
+          'Profile required',
+          'Set your health profile first so we can roll meals up against a target.',
+        );
+      } else {
+        Alert.alert('Save failed', msg);
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -133,6 +176,44 @@ export default function Log() {
           ))}
 
           {result.notes ? <Text style={styles.notes}>{result.notes}</Text> : null}
+
+          <View style={styles.divider} />
+
+          <Text style={styles.saveEyebrow}>Log as</Text>
+          <View style={styles.slotRow}>
+            {MEAL_SLOTS.map((slot) => (
+              <Pressable
+                key={slot}
+                onPress={() => setMeal(slot)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: meal === slot }}
+                style={[styles.slot, meal === slot && styles.slotActive]}
+              >
+                <Text style={[styles.slotLabel, meal === slot && styles.slotLabelActive]}>
+                  {slot[0]?.toUpperCase()}
+                  {slot.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {saved ? (
+            <View style={styles.savedRow}>
+              <Badge label="✓ Saved to today" tone="accent" />
+              <Link href="/today" asChild>
+                <Pressable accessibilityRole="link" style={styles.savedLink}>
+                  <Text style={styles.savedLinkText}>View today →</Text>
+                </Pressable>
+              </Link>
+            </View>
+          ) : (
+            <Button
+              label={saving ? 'Saving…' : 'Save to today'}
+              size="lg"
+              onPress={save}
+              disabled={saving}
+            />
+          )}
         </Card>
       )}
     </Screen>
@@ -249,4 +330,40 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontSize: 13,
   },
+
+  saveEyebrow: {
+    ...typography.eyebrow,
+    color: colors.muted,
+  },
+  slotRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  slot: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  slotActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accentDark,
+  },
+  slotLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  slotLabelActive: { color: '#FFFFFF' },
+
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  savedLink: {
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  savedLinkText: { color: colors.accentDark, fontWeight: '700' },
 });

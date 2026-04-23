@@ -57,8 +57,15 @@ export default function Home() {
           accent={colors.highlight}
         />
         <FeatureCard
-          href="/find"
+          href="/today"
           eyebrow="Step 3"
+          title="Track your day"
+          description="See calories + macros vs your target. Know exactly what's left to eat."
+          accent={colors.accent}
+        />
+        <FeatureCard
+          href="/find"
+          eyebrow="Step 4"
           title="Find a nutritionist"
           description="Book a virtual or in-home session with verified experts near you."
           accent={colors.accentDark}
@@ -84,7 +91,7 @@ function FeatureCard({
   description,
   accent,
 }: {
-  href: '/profile' | '/log' | '/find';
+  href: '/profile' | '/log' | '/today' | '/find';
   eyebrow: string;
   title: string;
   description: string;
