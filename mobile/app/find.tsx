@@ -1,5 +1,6 @@
+import { Link } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Badge } from '../src/components/Badge';
 import { Button } from '../src/components/Button';
@@ -87,7 +88,11 @@ export default function Find() {
           ) : null
         }
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <Link href={`/nutritionist/${item.nutritionist_id}`} asChild>
+            <Pressable
+              accessibilityRole="link"
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            >
             <View style={styles.cardHead}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{initials(item.name)}</Text>
@@ -140,7 +145,8 @@ export default function Find() {
                 </View>
               )}
             </View>
-          </View>
+            </Pressable>
+          </Link>
         )}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -205,6 +211,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     ...shadows.sm,
+  },
+  cardPressed: {
+    backgroundColor: colors.surfaceSunken,
   },
   cardHead: {
     flexDirection: 'row',

@@ -69,15 +69,38 @@ export type HealthProfileOut = HealthProfileIn & {
 export type NutritionistOut = {
   nutritionist_id: string;
   name: string;
+  email?: string;
   country: 'US' | 'IN';
   city: string;
+  credentials?: string[];
   specialties: string[];
   languages: string[];
+  bio?: string;
   virtual_rate: number;
   in_home_rate: number | null;
+  kitchen_audit_rate?: number | null;
   rating_avg: number;
   rating_count: number;
   verification_status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+};
+
+export type BookingType = 'virtual' | 'in_home' | 'kitchen_audit';
+export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
+
+export type BookingOut = {
+  booking_id: string;
+  nutritionist_id: string;
+  user_id: string;
+  type: BookingType;
+  starts_at: string;
+  duration_minutes: number;
+  notes: string;
+  status: BookingStatus;
+  price: number;
+  currency: string;
+  created_at: string;
+  chime_meeting_id?: string | null;
 };
 
 export type PresignOut = {
@@ -172,6 +195,38 @@ export const api = {
     }
     const suffix = q.toString() ? `?${q.toString()}` : '';
     return request<NutritionistOut[]>(`/v1/nutritionists${suffix}`);
+  },
+
+  getNutritionist(id: string): Promise<NutritionistOut> {
+    return request<NutritionistOut>(`/v1/nutritionists/${encodeURIComponent(id)}`);
+  },
+
+  createBooking(
+    userId: string,
+    body: {
+      nutritionist_id: string;
+      type: BookingType;
+      starts_at: string;
+      duration_minutes: number;
+      notes?: string;
+    },
+  ): Promise<BookingOut> {
+    return request<BookingOut>('/v1/bookings', {
+      method: 'POST',
+      body: JSON.stringify({ notes: '', ...body }),
+      userId,
+    });
+  },
+
+  listMyBookings(userId: string): Promise<BookingOut[]> {
+    return request<BookingOut[]>('/v1/bookings', { userId });
+  },
+
+  cancelBooking(userId: string, bookingId: string): Promise<BookingOut> {
+    return request<BookingOut>(`/v1/bookings/${encodeURIComponent(bookingId)}/cancel`, {
+      method: 'POST',
+      userId,
+    });
   },
 
   /**

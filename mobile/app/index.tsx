@@ -70,6 +70,13 @@ export default function Home() {
           description="Book a virtual or in-home session with verified experts near you."
           accent={colors.accentDark}
         />
+        <FeatureCard
+          href="/bookings"
+          eyebrow="Step 5"
+          title="My sessions"
+          description="Review upcoming consults. Cancel or rebook with a tap."
+          accent={colors.highlight}
+        />
       </View>
     </Screen>
   );
@@ -91,7 +98,7 @@ function FeatureCard({
   description,
   accent,
 }: {
-  href: '/profile' | '/log' | '/today' | '/find';
+  href: '/profile' | '/log' | '/today' | '/find' | '/bookings';
   eyebrow: string;
   title: string;
   description: string;

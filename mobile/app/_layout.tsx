@@ -22,6 +22,8 @@ export default function RootLayout() {
         <Stack.Screen name="log" options={{ title: 'Log a meal' }} />
         <Stack.Screen name="today" options={{ title: 'Today' }} />
         <Stack.Screen name="find" options={{ title: 'Nutritionists' }} />
+        <Stack.Screen name="nutritionist/[id]" options={{ title: 'Nutritionist' }} />
+        <Stack.Screen name="bookings" options={{ title: 'My sessions' }} />
       </Stack>
     </SafeAreaProvider>
   );
