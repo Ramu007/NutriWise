@@ -106,6 +106,12 @@ function contentTypeForUri(uri: string): ImageContentType {
   return 'image/jpeg';
 }
 
+function isLocalBase(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(
+    url,
+  );
+}
+
 export const api = {
   baseUrl,
   setAuthToken,
@@ -135,51 +141,54 @@ export const api = {
   /**
    * Presign → PUT to S3 → analyze. This is the path mobile uses in prod.
    *
-   * In local dev there is usually no S3 bucket, so the presign step or the
-   * PUT itself fails. We fall back to the legacy multipart `/analyze` path
-   * automatically so the UI stays functional without a separate toggle.
+   * In local dev there's no reachable S3 bucket (or it's in the wrong region,
+   * or CORS rejects the browser's PUT), so we fall back to the legacy
+   * multipart `/analyze` path automatically. We also short-circuit the whole
+   * S3 flow when the API points at localhost — it will never work from a
+   * browser against a real S3 bucket, and the fallback is what we actually
+   * want there.
    */
   async analyzeFoodPhotoByKey(
     userId: string,
     uri: string,
     hint?: string,
   ): Promise<FoodPhotoAnalysis> {
-    const contentType = contentTypeForUri(uri);
+    if (isLocalBase(baseUrl)) {
+      return api.analyzeFoodPhoto(userId, uri, hint);
+    }
 
-    let presign: PresignOut;
     try {
-      presign = await request<PresignOut>('/v1/food/uploads/presign', {
+      const contentType = contentTypeForUri(uri);
+      const presign = await request<PresignOut>('/v1/food/uploads/presign', {
         method: 'POST',
         body: JSON.stringify({ content_type: contentType }),
         userId,
       });
-    } catch (e) {
-      // Presign endpoint unavailable (no S3 creds on local dev) — fall back.
-      console.warn('[nutriwise] presign failed, using multipart fallback:', (e as Error).message);
-      return api.analyzeFoodPhoto(userId, uri, hint);
-    }
 
-    // React Native's fetch can stream a local file URI straight into a PUT body,
-    // but the cleanest cross-platform path is to read the blob and send that.
-    const fileRes = await fetch(uri);
-    const blob = await fileRes.blob();
-    const putRes = await fetch(presign.url, {
-      method: 'PUT',
-      headers: presign.required_headers,
-      body: blob,
-    });
-    if (!putRes.ok) {
+      // RN fetch streams a local file URI directly; web needs a real Blob.
+      const fileRes = await fetch(uri);
+      const blob = await fileRes.blob();
+      const putRes = await fetch(presign.url, {
+        method: 'PUT',
+        headers: presign.required_headers,
+        body: blob,
+      });
+      if (!putRes.ok) {
+        throw new Error(`S3 PUT ${putRes.status}`);
+      }
+
+      return await request<FoodPhotoAnalysis>('/v1/food/analyze-key', {
+        method: 'POST',
+        body: JSON.stringify({ s3_key: presign.s3_key, hint }),
+        userId,
+      });
+    } catch (e) {
       console.warn(
-        `[nutriwise] S3 PUT failed (${putRes.status}); using multipart fallback`,
+        '[nutriwise] presigned upload failed, using multipart fallback:',
+        (e as Error).message,
       );
       return api.analyzeFoodPhoto(userId, uri, hint);
     }
-
-    return request<FoodPhotoAnalysis>('/v1/food/analyze-key', {
-      method: 'POST',
-      body: JSON.stringify({ s3_key: presign.s3_key, hint }),
-      userId,
-    });
   },
 
   /**
